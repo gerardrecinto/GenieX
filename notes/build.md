@@ -12,6 +12,9 @@ Install Bazelisk:
 
 ## Windows prerequisites
 
+> [!IMPORTANT]
+> Run every command below from **PowerShell** (`pwsh` or Windows PowerShell) — not `cmd.exe`, Git Bash, or WSL. The toolchain step below chains commands through `cmd /c '"...\VsDevCmd.bat" ... && cmake ...'`, and that only parses correctly with PowerShell's quoting (an outer single-quoted string wrapping embedded double-quoted paths). Backslash-escaped quotes (`\"..\"`) are a `cmd.exe` convention — PowerShell doesn't treat `\` as a string escape character, so `cmd /c "...\"C:\Program Files...\"..."` breaks with `'\' is not recognized as an internal or external command`.
+
 ### Symlink support (Bazel and CMake)
 
 Needed for both Bazel and the SDK's CMake configure step — a vendored submodule (sentencepiece, under `third-party/geniex-qairt`) creates a symlink during configure and fails with "A required privilege is not held by the client" without this.
@@ -21,6 +24,9 @@ Needed for both Bazel and the SDK's CMake configure step — a vendored submodul
 3. Enable **Long paths**: Settings → Privacy & Security → For developers.
 4. **Sign out and back in (or reboot)** after enabling Developer Mode. The toggle showing "On" in Settings isn't enough — already-open sessions keep their old token, which lacks `SeCreateSymbolicLinkPrivilege` until a fresh logon. Verify with `whoami /priv | findstr SymbolicLink` in a new terminal; if it prints nothing, the privilege hasn't taken effect yet.
 5. If symlink errors persist, comment out `startup --windows_enable_symlinks` in `.bazelrc` — but be aware this can break other SDK paths.
+
+> [!NOTE]
+> **Corporate/domain-joined machines:** on a managed PC, Group Policy can prevent step 4 from ever taking effect — `whoami /priv` keeps showing no `SeCreateSymbolicLinkPrivilege` even after a full reboot with Developer Mode confirmed on (check with `gpresult /r` to confirm GPOs are applied). If that's the case, skip the Developer Mode dance and instead run the build (both `cmake --preset ...` and `bazelisk ...`) from an **elevated** terminal ("Run as Administrator" PowerShell, or an elevated "Developer PowerShell for VS"). Local Administrators get `SeCreateSymbolicLinkPrivilege` by default once elevated, regardless of Developer Mode or domain policy. You can confirm you're a local admin even when GPO is blocking the normal grant via `whoami /groups` — `BUILTIN\Administrators` shows up as "Group used for deny only" in a standard (non-elevated) session, meaning UAC is filtering the privilege rather than it being genuinely absent.
 
 ### Toolchain (SDK build)
 
@@ -64,13 +70,19 @@ The `arm64-windows-snapdragon-release` preset requires:
 > cd G:\sdk
 > ```
 
-Run from inside a Visual Studio Developer environment for ARM64 (see [Toolchain § clang/MSVC note](#toolchain-sdk-build) above) — either launch a "Developer PowerShell for VS" (ARM64 variant) from the Start menu, or call `VsDevCmd.bat` first:
+Run from inside a Visual Studio Developer environment for ARM64 (see [Toolchain § clang/MSVC note](#toolchain-sdk-build) above) — either launch a "Developer PowerShell for VS" (ARM64 variant) from the Start menu, or call `VsDevCmd.bat` first. On a corporate/domain-joined machine where the symlink privilege won't take effect (see [Symlink support](#symlink-support-bazel-and-cmake) above), launch that PowerShell **elevated** ("Run as Administrator"):
 
 ```powershell
 cd sdk
 cmake --preset arm64-windows-snapdragon-release -B build
 cmake --build build -j
 cmake --install build --prefix pkg-geniex
+```
+
+Or in one line from a plain (non-Developer) PowerShell, chaining through `VsDevCmd.bat` — note the outer single-quotes (see the PowerShell quoting warning under [Windows prerequisites](#windows-prerequisites)):
+
+```powershell
+cmd /c '"C:\Program Files\Microsoft Visual Studio\<edition>\Common7\Tools\VsDevCmd.bat" -arch=arm64 -host_arch=x64 && cmake --preset arm64-windows-snapdragon-release -B build && cmake --build build -j && cmake --install build --prefix pkg-geniex'
 ```
 
 ### Linux (cross-compile from x86_64)
