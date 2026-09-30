@@ -158,6 +158,25 @@ adb shell "cd /data/local/tmp/geniex && \
 
 The Android demo app is no longer hosted in this repo — it lives in [`qualcomm/ai-hub-apps`](https://github.com/qualcomm/ai-hub-apps/tree/main/apps/geniex_chat_android). Build the AAR here, then point the demo app at it.
 
+### Building against a different QAIRT SDK's headers
+
+The `qairt` plugin (`sdk/plugins/qairt`) compiles against the QNN C API headers
+vendored in `third-party/geniex-qairt/qnn-api/include/` — deliberately the
+lowest version it supports, so the compiled plugin accepts the widest range of
+runtimes. To compile against a different header set instead (e.g. a
+workbench/internal QAIRT checkout), pass `-DQAIRT_QNN_HEADERS=...` through to
+any of the presets above — it's a CMake cache variable defined in the
+submodule, so it flows straight through `add_subdirectory`:
+
+```bash
+cmake --preset arm64-windows-snapdragon-release -B build -DQAIRT_QNN_HEADERS=C:\path\to\qairt\include
+```
+
+See [`third-party/geniex-qairt` § Using a different QAIRT runtime](https://github.com/qualcomm/geniex-qairt-plugin#using-a-different-qairt-runtime)
+for the expected directory shape and caveats (this only narrows the accepted
+runtime range, never widens it). Requires the submodule to be at or past
+`geniex-qairt-plugin` commit `9f852a2` (allow external QNN SDK headers).
+
 ## Build and run the CLI
 
 With the SDK built and installed into `sdk/pkg-geniex/`, build and run the CLI. Quick smoke test:
