@@ -21,6 +21,7 @@ require (
 	github.com/valyala/fasthttp v1.68.0
 	golang.org/x/image v0.38.0
 	golang.org/x/mod v0.33.0
+	golang.org/x/net v0.47.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/sys v0.46.0
 	golang.org/x/term v0.44.0
