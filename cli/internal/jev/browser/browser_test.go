@@ -13,6 +13,12 @@ import (
 	"github.com/qualcomm/GenieX/cli/internal/jev"
 )
 
+func TestStartBrowserRejectsMissingExecutable(t *testing.T) {
+	if _, _, err := startBrowser(t.Context(), filepath.Join(t.TempDir(), "missing-browser")); err == nil {
+		t.Fatal("startBrowser() accepted a missing executable")
+	}
+}
+
 func TestLaunchArgsRestrictsCDPOrigin(t *testing.T) {
 	args := launchArgs(9222, "profile", true, "https://example.test")
 	joined := strings.Join(args, "\n")

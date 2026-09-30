@@ -8,13 +8,13 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -41,15 +41,16 @@ type Config struct {
 // Browser is a single-page CDP client. It never exposes arbitrary CDP calls to
 // the model: only the action implementation below dispatches browser events.
 type Browser struct {
-	ws         *websocket.Conn
-	process    *exec.Cmd
+	ws                   *websocket.Conn
+	process              *os.Process
+	processDone          chan struct{}
 	profileDir           string
 	removeDir            bool
 	traceDir             string
 	observationDir       string
 	removeObservationDir bool
 	mu                   sync.Mutex
-	nextID     int
+	nextID               int
 }
 
 type versionInfo struct {
@@ -107,13 +108,13 @@ func Open(ctx context.Context, config Config) (*Browser, error) {
 				return nil, err
 			}
 		}
-		// path is supplied by the local operator or selected from fixed Chrome/Edge
-		// candidates; untrusted model or page data never controls the executable.
-		browser.process = exec.CommandContext(ctx, path, launchArgs(port, profileDir, config.Headless, config.InitialURL)...) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
-		if err := browser.process.Start(); err != nil {
+		process, done, err := startBrowser(ctx, path, launchArgs(port, profileDir, config.Headless, config.InitialURL)...)
+		if err != nil {
 			browser.Close()
 			return nil, fmt.Errorf("start browser %q: %w", path, err)
 		}
+		browser.process = process
+		browser.processDone = done
 		endpoint = fmt.Sprintf("http://127.0.0.1:%d", port)
 	}
 
@@ -133,6 +134,29 @@ func Open(ctx context.Context, config Config) (*Browser, error) {
 	}
 	browser.ws = ws
 	return browser, nil
+}
+
+// startBrowser launches a browser executable selected by the local operator or
+// defaultBrowserPath. The model and visited page never influence executablePath.
+func startBrowser(ctx context.Context, executablePath string, args ...string) (*os.Process, <-chan struct{}, error) {
+	attributes := &os.ProcAttr{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}}
+	process, err := os.StartProcess(executablePath, append([]string{executablePath}, args...), attributes)
+	if err != nil {
+		return nil, nil, err
+	}
+	done := make(chan struct{})
+	go func() {
+		_, _ = process.Wait()
+		close(done)
+	}()
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = process.Kill()
+		case <-done:
+		}
+	}()
+	return process, done, nil
 }
 
 func launchArgs(port int, profileDir string, headless bool, initialURL string) []string {
@@ -160,11 +184,13 @@ func (b *Browser) Close() error {
 		}
 		b.ws = nil
 	}
-	if b.process != nil && b.process.Process != nil {
-		if err := b.process.Process.Kill(); err != nil && firstErr == nil {
+	if b.process != nil {
+		if err := b.process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) && firstErr == nil {
 			firstErr = err
 		}
-		_, _ = b.process.Process.Wait()
+		if b.processDone != nil {
+			<-b.processDone
+		}
 	}
 	if b.removeDir && b.profileDir != "" {
 		if err := os.RemoveAll(b.profileDir); err != nil && firstErr == nil {
@@ -427,12 +453,15 @@ func validateAttachURL(raw string) error {
 
 func waitForPage(ctx context.Context, endpoint string, attached bool, initialURL string) (string, error) {
 	endpoint = strings.TrimSuffix(endpoint, "/")
-	// validateAttachURL permits this transport only for loopback CDP endpoints.
-	if strings.HasPrefix(endpoint, "ws://") || strings.HasPrefix(endpoint, "wss://") { // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
+	parsed, err := url.ParseRequestURI(endpoint)
+	if err != nil {
+		return "", fmt.Errorf("invalid CDP endpoint %q: %w", endpoint, err)
+	}
+	if parsed.Scheme == "ws" || parsed.Scheme == "wss" {
 		return endpoint, nil
 	}
-	if _, err := url.ParseRequestURI(endpoint); err != nil {
-		return "", fmt.Errorf("invalid CDP endpoint %q: %w", endpoint, err)
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("invalid CDP endpoint scheme %q", parsed.Scheme)
 	}
 	client := &http.Client{
 		CheckRedirect: func(*http.Request, []*http.Request) error {
