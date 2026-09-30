@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -43,7 +44,7 @@ type Config struct {
 type Browser struct {
 	ws                   *websocket.Conn
 	process              *os.Process
-	processDone          chan struct{}
+	processDone          <-chan struct{}
 	profileDir           string
 	removeDir            bool
 	traceDir             string
