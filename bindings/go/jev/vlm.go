@@ -22,18 +22,16 @@ type VLM interface {
 type VLMRequest struct {
 	System          string
 	User            string
-	ImagePaths      []string
-	Grammar         string
-	ImageMaxLength  int32
-	MaxTokens       int32
+	ImagePaths []string
+	Grammar    string
+	MaxTokens  int32
 }
 
 // VLMDecider creates constrained structured candidates. It has no execution,
 // approval, browser, shell, or filesystem-management capability.
 type VLMDecider struct {
-	VLM            VLM
-	RuntimeID      string
-	ImageMaxLength int32
+	VLM       VLM
+	RuntimeID string
 }
 
 // Decide returns raw model output for strict host-side parsing. A non-empty
@@ -78,7 +76,7 @@ func (d VLMDecider) DecideWithTiming(_ context.Context, request VLMRequest) (str
 	if maxTokens <= 0 {
 		maxTokens = 128
 	}
-	sampler := &geniex_sdk.SamplerConfig{Temperature: 0, EnableJson: true}
+	sampler := &geniex_sdk.SamplerConfig{Temperature: 0}
 	if d.RuntimeID == geniex_sdk.RuntimeLlamaCpp && request.Grammar != "" {
 		sampler.GrammarString = request.Grammar
 	}
@@ -86,10 +84,9 @@ func (d VLMDecider) DecideWithTiming(_ context.Context, request VLMRequest) (str
 	response, err := d.VLM.Generate(geniex_sdk.VlmGenerateInput{
 		PromptUTF8: template.FormattedText,
 		Config: &geniex_sdk.GenerationConfig{
-			MaxTokens:      maxTokens,
-			ImagePaths:     request.ImagePaths,
-			ImageMaxLength: request.ImageMaxLength,
-			SamplerConfig:  sampler,
+			MaxTokens:     maxTokens,
+			ImagePaths:    request.ImagePaths,
+			SamplerConfig: sampler,
 		},
 	})
 	timing := DecisionTiming{TemplateTime: templateTime, GenerationTime: time.Since(generationStarted), TotalTime: time.Since(started), PromptHash: promptHash, PromptVersion: promptVersion}

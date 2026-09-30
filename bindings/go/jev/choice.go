@@ -48,7 +48,6 @@ type ClassificationSpec struct {
 	Instructions      string
 	Context           string
 	ImagePaths        []string
-	ImageMaxLength    int32
 	MaxTokens         int32
 	RequestConfidence bool
 }
@@ -78,7 +77,7 @@ func (d VLMDecider) ClassifyWithTiming(ctx context.Context, spec ClassificationS
 	if err != nil {
 		return ClassificationResult{}, DecisionTiming{TotalTime: time.Since(started)}, err
 	}
-	raw, timing, err := d.DecideWithTiming(ctx, VLMRequest{System: decisionSystemPrompt, User: user, ImagePaths: spec.ImagePaths, ImageMaxLength: spec.ImageMaxLength, Grammar: grammar, MaxTokens: spec.MaxTokens})
+	raw, timing, err := d.DecideWithTiming(ctx, VLMRequest{System: decisionSystemPrompt, User: user, ImagePaths: spec.ImagePaths, Grammar: grammar, MaxTokens: spec.MaxTokens})
 	if err != nil {
 		return ClassificationResult{}, timing, err
 	}
@@ -173,7 +172,6 @@ type MultipleChoiceSpec struct {
 	Instructions      string
 	Context           string
 	ImagePaths        []string
-	ImageMaxLength    int32
 	MaxTokens         int32
 	RequestConfidence bool
 }
@@ -203,7 +201,7 @@ func (d VLMDecider) ChooseWithTiming(ctx context.Context, spec MultipleChoiceSpe
 	if err != nil {
 		return MultipleChoiceResult{}, DecisionTiming{TotalTime: time.Since(started)}, err
 	}
-	raw, timing, err := d.DecideWithTiming(ctx, VLMRequest{System: decisionSystemPrompt, User: user, ImagePaths: spec.ImagePaths, ImageMaxLength: spec.ImageMaxLength, Grammar: grammar, MaxTokens: spec.MaxTokens})
+	raw, timing, err := d.DecideWithTiming(ctx, VLMRequest{System: decisionSystemPrompt, User: user, ImagePaths: spec.ImagePaths, Grammar: grammar, MaxTokens: spec.MaxTokens})
 	if err != nil {
 		return MultipleChoiceResult{}, timing, err
 	}

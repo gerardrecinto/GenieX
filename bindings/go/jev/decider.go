@@ -23,8 +23,7 @@ func (d VLMDecider) DecideAction(ctx context.Context, task string, observation O
 		System:         SystemPrompt(),
 		User:           promptText,
 		ImagePaths:     []string{observation.ScreenshotPath},
-		Grammar:        Grammar,
-		ImageMaxLength: d.ImageMaxLength,
-		MaxTokens:      256,
+		Grammar:   Grammar,
+		MaxTokens: 256,
 	})
 }

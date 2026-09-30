@@ -156,7 +156,7 @@ func runJEVClassify(ctx context.Context, model string, options jevOptions) error
 		return err
 	}
 	return withJEVModel(ctx, model, options, func(paths *geniex_sdk.ModelPaths, llm *geniex_sdk.LLM, vlm *geniex_sdk.VLM) error {
-		spec := bindingjev.ClassificationSpec{Labels: options.labels, Instructions: options.instruction, Context: contextText, ImagePaths: options.images, ImageMaxLength: imageMaxLength, MaxTokens: maxTokens, RequestConfidence: options.confidence}
+		spec := bindingjev.ClassificationSpec{Labels: options.labels, Instructions: options.instruction, Context: contextText, ImagePaths: options.images, MaxTokens: maxTokens, RequestConfidence: options.confidence}
 		if llm != nil {
 			decider := bindingjev.LLMDecider{LLM: llm, RuntimeID: paths.RuntimeID}
 			result, timing, err := runJEVBenchmark(options.benchmark, llm.Reset, func() (any, bindingjev.DecisionTiming, error) {
@@ -168,7 +168,7 @@ func runJEVClassify(ctx context.Context, model string, options jevOptions) error
 			printJEVBenchmark(options.benchmark, options, timing)
 			return printJEVJSON(result)
 		}
-		decider := bindingjev.VLMDecider{VLM: vlm, RuntimeID: paths.RuntimeID, ImageMaxLength: imageMaxLength}
+		decider := bindingjev.VLMDecider{VLM: vlm, RuntimeID: paths.RuntimeID}
 		result, timing, err := runJEVBenchmark(options.benchmark, vlm.Reset, func() (any, bindingjev.DecisionTiming, error) {
 			return decider.ClassifyWithTiming(ctx, spec)
 		})
@@ -193,7 +193,7 @@ func runJEVChoose(ctx context.Context, model string, options jevOptions) error {
 		return err
 	}
 	return withJEVModel(ctx, model, options, func(paths *geniex_sdk.ModelPaths, llm *geniex_sdk.LLM, vlm *geniex_sdk.VLM) error {
-		spec := bindingjev.MultipleChoiceSpec{Options: parsed, Instructions: options.instruction, Context: contextText, ImagePaths: options.images, ImageMaxLength: imageMaxLength, MaxTokens: maxTokens, MinSelections: options.minSelections, MaxSelections: options.maxSelections, RequestConfidence: options.confidence}
+		spec := bindingjev.MultipleChoiceSpec{Options: parsed, Instructions: options.instruction, Context: contextText, ImagePaths: options.images, MaxTokens: maxTokens, MinSelections: options.minSelections, MaxSelections: options.maxSelections, RequestConfidence: options.confidence}
 		if llm != nil {
 			decider := bindingjev.LLMDecider{LLM: llm, RuntimeID: paths.RuntimeID}
 			result, timing, err := runJEVBenchmark(options.benchmark, llm.Reset, func() (any, bindingjev.DecisionTiming, error) {
@@ -205,7 +205,7 @@ func runJEVChoose(ctx context.Context, model string, options jevOptions) error {
 			printJEVBenchmark(options.benchmark, options, timing)
 			return printJEVJSON(result)
 		}
-		decider := bindingjev.VLMDecider{VLM: vlm, RuntimeID: paths.RuntimeID, ImageMaxLength: imageMaxLength}
+		decider := bindingjev.VLMDecider{VLM: vlm, RuntimeID: paths.RuntimeID}
 		result, timing, err := runJEVBenchmark(options.benchmark, vlm.Reset, func() (any, bindingjev.DecisionTiming, error) {
 			return decider.ChooseWithTiming(ctx, spec)
 		})
@@ -222,7 +222,7 @@ func runJEVTriage(ctx context.Context, model string, options jevOptions) error {
 		return fmt.Errorf("--message is required")
 	}
 	return withJEVModel(ctx, model, options, func(paths *geniex_sdk.ModelPaths, llm *geniex_sdk.LLM, vlm *geniex_sdk.VLM) error {
-		spec := bindingjev.TriageSpec{Message: options.message, ImagePaths: options.images, ImageMaxLength: imageMaxLength, MaxTokens: maxTokens}
+		spec := bindingjev.TriageSpec{Message: options.message, ImagePaths: options.images, MaxTokens: maxTokens}
 		if llm != nil {
 			decider := bindingjev.LLMDecider{LLM: llm, RuntimeID: paths.RuntimeID}
 			result, timing, err := runJEVBenchmark(options.benchmark, llm.Reset, func() (any, bindingjev.DecisionTiming, error) {
@@ -234,7 +234,7 @@ func runJEVTriage(ctx context.Context, model string, options jevOptions) error {
 			printJEVBenchmark(options.benchmark, options, timing)
 			return printJEVJSON(result)
 		}
-		decider := bindingjev.VLMDecider{VLM: vlm, RuntimeID: paths.RuntimeID, ImageMaxLength: imageMaxLength}
+		decider := bindingjev.VLMDecider{VLM: vlm, RuntimeID: paths.RuntimeID}
 		result, timing, err := runJEVBenchmark(options.benchmark, vlm.Reset, func() (any, bindingjev.DecisionTiming, error) {
 			return decider.TriageWithTiming(ctx, spec)
 		})
@@ -601,7 +601,7 @@ func runJEV(ctx context.Context, model string, options jevOptions) error {
 	}
 	defer b.Close()
 
-	decider := bindingjev.VLMDecider{VLM: vlm, RuntimeID: paths.RuntimeID, ImageMaxLength: imageMaxLength}
+	decider := bindingjev.VLMDecider{VLM: vlm, RuntimeID: paths.RuntimeID}
 	agent := jev.Agent{
 		Browser:  b,
 		Decider:  decider,

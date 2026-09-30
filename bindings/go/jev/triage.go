@@ -27,9 +27,8 @@ var (
 // Message is untrusted customer content. It is not an instruction to the model.
 type TriageSpec struct {
 	Message        string
-	ImagePaths     []string
-	ImageMaxLength int32
-	MaxTokens      int32
+	ImagePaths []string
+	MaxTokens  int32
 }
 
 // TriageResult is a locally validated, categorical counterpart to Laya's
@@ -59,7 +58,7 @@ func (d VLMDecider) TriageWithTiming(ctx context.Context, spec TriageSpec) (Tria
 	}
 	raw, timing, err := d.DecideWithTiming(ctx, VLMRequest{
 		System: decisionSystemPrompt, User: user, ImagePaths: spec.ImagePaths,
-		ImageMaxLength: spec.ImageMaxLength, Grammar: triageGrammar(), MaxTokens: spec.MaxTokens,
+		Grammar: triageGrammar(), MaxTokens: spec.MaxTokens,
 	})
 	if err != nil {
 		return TriageResult{}, timing, err

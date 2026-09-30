@@ -123,7 +123,7 @@ func (f *fakeVLM) Generate(input geniex_sdk.VlmGenerateInput) (*geniex_sdk.VlmGe
 
 func TestDeciderBuildsConstrainedVisualRequest(t *testing.T) {
 	model := &fakeVLM{response: &geniex_sdk.VlmGenerateOutput{FullText: `{"action":"read","index":1}`}}
-	response, err := (VLMDecider{VLM: model, RuntimeID: geniex_sdk.RuntimeLlamaCpp, ImageMaxLength: 512}).DecideAction(
+	response, err := (VLMDecider{VLM: model, RuntimeID: geniex_sdk.RuntimeLlamaCpp}).DecideAction(
 		context.Background(), "read the page", observation(), []string{"scrolled"}, "bad JSON")
 	if err != nil {
 		t.Fatalf("DecideAction() error = %v", err)
@@ -140,7 +140,7 @@ func TestDeciderBuildsConstrainedVisualRequest(t *testing.T) {
 	if model.generateInput.Config.ImagePaths[0] != observation().ScreenshotPath {
 		t.Fatalf("image paths = %#v", model.generateInput.Config.ImagePaths)
 	}
-	if model.generateInput.Config.SamplerConfig.GrammarString != Grammar || !model.generateInput.Config.SamplerConfig.EnableJson {
+	if model.generateInput.Config.SamplerConfig.GrammarString != Grammar {
 		t.Fatalf("sampler = %#v", model.generateInput.Config.SamplerConfig)
 	}
 	if !strings.Contains(model.templateInput.Messages[1].Contents[0].Text, "Previous response was rejected") {

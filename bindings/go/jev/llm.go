@@ -67,7 +67,7 @@ func (d LLMDecider) DecideWithTiming(_ context.Context, request LLMRequest) (str
 	if maxTokens <= 0 {
 		maxTokens = 128
 	}
-	sampler := &geniex_sdk.SamplerConfig{Temperature: 0, EnableJson: true}
+	sampler := &geniex_sdk.SamplerConfig{Temperature: 0}
 	if d.RuntimeID == geniex_sdk.RuntimeLlamaCpp && request.Grammar != "" {
 		sampler.GrammarString = request.Grammar
 	}

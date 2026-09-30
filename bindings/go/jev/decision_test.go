@@ -79,7 +79,7 @@ func TestClassifyBuildsConstrainedRequest(t *testing.T) {
 		t.Fatalf("user prompt lacks untrusted-context boundary: %q", model.templateInput.Messages[1].Contents[0].Text)
 	}
 	sampler := model.generateInput.Config.SamplerConfig
-	if !sampler.EnableJson || !strings.Contains(sampler.GrammarString, `\"cat\"`) || !strings.Contains(sampler.GrammarString, `\"dog\"`) {
+	if !strings.Contains(sampler.GrammarString, `\"cat\"`) || !strings.Contains(sampler.GrammarString, `\"dog\"`) {
 		t.Fatalf("sampler = %#v", sampler)
 	}
 	if got := model.generateInput.Config.ImagePaths; len(got) != 1 || got[0] != "C:/temp/image.png" {
@@ -147,7 +147,7 @@ func TestChooseBuildsJSONOnlyRequestOutsideLlama(t *testing.T) {
 		t.Fatalf("result = %#v", result)
 	}
 	sampler := model.generateInput.Config.SamplerConfig
-	if !sampler.EnableJson || sampler.GrammarString != "" {
+	if sampler.GrammarString != "" {
 		t.Fatalf("sampler = %#v", sampler)
 	}
 }
@@ -181,7 +181,7 @@ func TestLLMDeciderClassifiesText(t *testing.T) {
 	if len(model.templateInput.Messages) != 2 || model.templateInput.Messages[0].Role != geniex_sdk.LlmRoleSystem {
 		t.Fatalf("messages = %#v", model.templateInput.Messages)
 	}
-	if !model.generateInput.Config.SamplerConfig.EnableJson || model.generateInput.Config.SamplerConfig.GrammarString == "" {
+	if model.generateInput.Config.SamplerConfig.GrammarString == "" {
 		t.Fatalf("sampler = %#v", model.generateInput.Config.SamplerConfig)
 	}
 }
@@ -255,7 +255,7 @@ func TestTriageBuildsOneConstrainedDecision(t *testing.T) {
 		t.Fatalf("messages = %#v", model.templateInput.Messages)
 	}
 	sampler := model.generateInput.Config.SamplerConfig
-	if !sampler.EnableJson || !strings.Contains(sampler.GrammarString, `\"refund\"`) || !strings.Contains(sampler.GrammarString, `\"churn_risk\"`) {
+	if !strings.Contains(sampler.GrammarString, `\"refund\"`) || !strings.Contains(sampler.GrammarString, `\"churn_risk\"`) {
 		t.Fatalf("sampler = %#v", sampler)
 	}
 }
