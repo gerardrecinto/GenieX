@@ -109,8 +109,7 @@ func Open(ctx context.Context, config Config) (*Browser, error) {
 		}
 		// path is supplied by the local operator or selected from fixed Chrome/Edge
 		// candidates; untrusted model or page data never controls the executable.
-		// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
-		browser.process = exec.CommandContext(ctx, path, launchArgs(port, profileDir, config.Headless, config.InitialURL)...)
+		browser.process = exec.CommandContext(ctx, path, launchArgs(port, profileDir, config.Headless, config.InitialURL)...) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 		if err := browser.process.Start(); err != nil {
 			browser.Close()
 			return nil, fmt.Errorf("start browser %q: %w", path, err)
@@ -429,8 +428,7 @@ func validateAttachURL(raw string) error {
 func waitForPage(ctx context.Context, endpoint string, attached bool, initialURL string) (string, error) {
 	endpoint = strings.TrimSuffix(endpoint, "/")
 	// validateAttachURL permits this transport only for loopback CDP endpoints.
-	// nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
-	if strings.HasPrefix(endpoint, "ws://") || strings.HasPrefix(endpoint, "wss://") {
+	if strings.HasPrefix(endpoint, "ws://") || strings.HasPrefix(endpoint, "wss://") { // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
 		return endpoint, nil
 	}
 	if _, err := url.ParseRequestURI(endpoint); err != nil {
