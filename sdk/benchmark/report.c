@@ -105,8 +105,15 @@ int write_cell_json(const options_t* o, const device_t* dev, int64_t model_size_
     json_field_str(f, "model_path", o->model_path, false);
     json_field_i64(f, "model_size_bytes", model_size_bytes, false);
     json_field_str(f, "geniex_version", geniex_version(), false);
-    json_field_str(f, "qairt_version", geniex_get_plugin_version("qairt"), false);
-    json_field_str(f, "llama_cpp_version", geniex_get_plugin_version("llama_cpp"), false);
+    // Only query the plugin this cell ran with: geniex_get_plugin_version() lazily constructs the plugin, and
+    // loading an unused one can disturb the HTP session still held by the active plugin.
+    if (strcmp(o->plugin, "qairt") == 0) {
+        json_field_str(f, "qairt_version", geniex_get_plugin_version("qairt"), false);
+        json_field_str(f, "llama_cpp_version", NULL, false);
+    } else {
+        json_field_str(f, "qairt_version", NULL, false);
+        json_field_str(f, "llama_cpp_version", geniex_get_plugin_version(o->plugin), false);
+    }
     fprintf(f, "    \"params\": {\n");
     fprintf(f,
         "      \"warmup\": %d, \"repetitions\": %d, \"n_prompt\": %d, \"n_gen\": %d,\n"
