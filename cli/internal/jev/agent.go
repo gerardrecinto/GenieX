@@ -192,7 +192,7 @@ func describeAction(action Action, target *Element, outcomes ...string) string {
 		description += " " + RedactedText(action, target)
 	}
 	if len(outcomes) > 0 && outcomes[0] != "" {
-		description += ": " + outcomes[0]
+		description += ": " + RedactSensitiveText(outcomes[0], target)
 	}
 	return description
 }

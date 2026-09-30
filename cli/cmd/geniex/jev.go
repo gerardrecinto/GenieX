@@ -99,9 +99,7 @@ classify, choose, and triage return validated JSON candidates and never execute 
 			return nil
 		},
 	}
-	for _, flags := range flagGroups {
-		command.Flags().AddFlagSet(flags)
-	}
+	command.Flags().AddFlagSet(jevModelFlags())
 	command.Flags().StringArrayVar(&options.labels, "label", nil, "allowed classification label ID (repeatable)")
 	command.Flags().StringArrayVar(&options.options, "option", nil, "allowed choice as id=text (repeatable)")
 	command.Flags().StringVar(&options.instruction, "instruction", "", "task instruction")

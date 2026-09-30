@@ -60,6 +60,9 @@ func TestApprovalPolicyFailsClosed(t *testing.T) {
 		required bool
 	}{
 		{"read page", Action{Action: ActionRead}, false},
+		{"read password", Action{Action: ActionRead, Index: pointer(3)}, true},
+		{"read plain text", Action{Action: ActionRead, Index: pointer(4)}, false},
+		{"read payment text", Action{Action: ActionRead, Index: pointer(5)}, true},
 		{"scroll", Action{Action: ActionScroll, Direction: "down", Amount: 100}, false},
 		{"wait", Action{Action: ActionWait, Milliseconds: 1}, false},
 		{"history back", Action{Action: ActionGoBack}, false},
@@ -90,11 +93,15 @@ func TestApprovalPolicyFailsClosed(t *testing.T) {
 type fakeBrowser struct {
 	observation Observation
 	executed    []Action
+	outcome     string
 }
 
 func (b *fakeBrowser) Observe(context.Context) (Observation, error) { return b.observation, nil }
 func (b *fakeBrowser) Execute(_ context.Context, action Action, _ Observation) (string, error) {
 	b.executed = append(b.executed, action)
+	if b.outcome != "" {
+		return b.outcome, nil
+	}
 	return "ok", nil
 }
 func (b *fakeBrowser) Close() error { return nil }
@@ -184,21 +191,33 @@ func (b *staleOnceBrowser) Execute(_ context.Context, action Action, _ Observati
 func (b *staleOnceBrowser) Close() error { return nil }
 
 func TestAgentDoesNotExposePasswordInLedger(t *testing.T) {
-	browser := &fakeBrowser{observation: testObservation()}
-	agent := Agent{
-		Browser: browser,
-		Decider: &sequenceDecider{responses: []string{
-			`{"action":"type","index":3,"text":"top-secret"}`,
-			`{"action":"finish","final_answer":"done"}`,
-		}},
-		Approver: fakeApprover{decision: ApprovalApprove},
-		Config: AgentConfig{Task: "log in", MaxSteps: 2, ApprovalMode: ApprovalRead},
-	}
-	result, err := agent.Run(context.Background())
-	if err != nil {
-		t.Fatalf("Run() error = %v", err)
-	}
-	if strings.Contains(strings.Join(result.Steps, "\n"), "top-secret") {
-		t.Fatalf("ledger leaked secret: %#v", result.Steps)
+	for _, test := range []struct {
+		name     string
+		action   string
+		outcome  string
+		contains string
+	}{
+		{"type", `{"action":"type","index":3,"text":"top-secret"}`, "ok", "top-secret"},
+		{"read", `{"action":"read","index":3}`, "top-secret", "top-secret"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			browser := &fakeBrowser{observation: testObservation(), outcome: test.outcome}
+			agent := Agent{
+				Browser: browser,
+				Decider: &sequenceDecider{responses: []string{
+					test.action,
+					`{"action":"finish","final_answer":"done"}`,
+				}},
+				Approver: fakeApprover{decision: ApprovalApprove},
+				Config:   AgentConfig{Task: "log in", MaxSteps: 2, ApprovalMode: ApprovalRead},
+			}
+			result, err := agent.Run(context.Background())
+			if err != nil {
+				t.Fatalf("Run() error = %v", err)
+			}
+			if strings.Contains(strings.Join(result.Steps, "\n"), test.contains) {
+				t.Fatalf("ledger leaked secret: %#v", result.Steps)
+			}
+		})
 	}
 }

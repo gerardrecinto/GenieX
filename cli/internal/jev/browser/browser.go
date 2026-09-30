@@ -72,6 +72,8 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
+const cdpClientOrigin = "http://127.0.0.1"
+
 // Open attaches to an existing browser or launches a clean isolated instance.
 func Open(ctx context.Context, config Config) (*Browser, error) {
 	endpoint := config.AttachURL
@@ -98,14 +100,7 @@ func Open(ctx context.Context, config Config) (*Browser, error) {
 				return nil, err
 			}
 		}
-		args := []string{fmt.Sprintf("--remote-debugging-port=%d", port), "--remote-allow-origins=*", "--no-first-run", "--no-default-browser-check", "--user-data-dir=" + profileDir}
-		if config.Headless {
-			args = append(args, "--headless=new")
-		}
-		if config.InitialURL != "" {
-			args = append(args, config.InitialURL)
-		}
-		browser.process = exec.CommandContext(ctx, path, args...)
+		browser.process = exec.CommandContext(ctx, path, launchArgs(port, profileDir, config.Headless, config.InitialURL)...)
 		if err := browser.process.Start(); err != nil {
 			browser.Close()
 			return nil, fmt.Errorf("start browser %q: %w", path, err)
@@ -118,13 +113,30 @@ func Open(ctx context.Context, config Config) (*Browser, error) {
 		browser.Close()
 		return nil, err
 	}
-	ws, err := websocket.Dial(pageURL, "", "http://127.0.0.1")
+	ws, err := websocket.Dial(pageURL, "", cdpClientOrigin)
 	if err != nil {
 		browser.Close()
 		return nil, fmt.Errorf("connect to browser CDP: %w", err)
 	}
 	browser.ws = ws
 	return browser, nil
+}
+
+func launchArgs(port int, profileDir string, headless bool, initialURL string) []string {
+	args := []string{
+		fmt.Sprintf("--remote-debugging-port=%d", port),
+		"--remote-allow-origins=" + cdpClientOrigin,
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--user-data-dir=" + profileDir,
+	}
+	if headless {
+		args = append(args, "--headless=new")
+	}
+	if initialURL != "" {
+		args = append(args, initialURL)
+	}
+	return args
 }
 
 func (b *Browser) Close() error {
@@ -197,23 +209,19 @@ func (b *Browser) Observe(ctx context.Context) (jev.Observation, error) {
 }
 
 func (b *Browser) snapshot(ctx context.Context) (string, string, []jev.Element, error) {
-	result, err := b.call(ctx, "Runtime.evaluate", map[string]any{"expression": snapshotScript, "returnByValue": true, "awaitPromise": true})
+	value, err := b.evaluate(ctx, snapshotScript)
 	if err != nil {
 		return "", "", nil, err
 	}
-	var eval struct {
-		Result struct {
-			Value struct {
-				URL      string         `json:"url"`
-				Title    string         `json:"title"`
-				Elements []jev.Element `json:"elements"`
-			} `json:"value"`
-		} `json:"result"`
+	var snapshot struct {
+		URL      string         `json:"url"`
+		Title    string         `json:"title"`
+		Elements []jev.Element `json:"elements"`
 	}
-	if err := json.Unmarshal(result, &eval); err != nil {
+	if err := json.Unmarshal(value, &snapshot); err != nil {
 		return "", "", nil, fmt.Errorf("decode browser snapshot: %w", err)
 	}
-	return eval.Result.Value.URL, eval.Result.Value.Title, eval.Result.Value.Elements, nil
+	return snapshot.URL, snapshot.Title, snapshot.Elements, nil
 }
 
 func (b *Browser) ensureFresh(ctx context.Context, observation jev.Observation) error {
@@ -259,7 +267,7 @@ func (b *Browser) Execute(ctx context.Context, action jev.Action, observation je
 		if action.Index == nil {
 			return "read page", nil
 		}
-		expression = targetExpression(*action.Index, "el => el.innerText || el.value || el.getAttribute('aria-label') || 'read'")
+		expression = targetExpression(*action.Index, "el => el.innerText || (el.type === 'password' ? '<redacted>' : el.value) || el.getAttribute('aria-label') || 'read'")
 	case jev.ActionClick:
 		expression = targetExpression(*action.Index, "el => { el.click(); return 'clicked'; }")
 	case jev.ActionType:
@@ -267,20 +275,52 @@ func (b *Browser) Execute(ctx context.Context, action jev.Action, observation je
 	default:
 		return "", fmt.Errorf("browser cannot execute %q", action.Action)
 	}
+	value, err := b.evaluate(ctx, expression)
+	if err != nil {
+		return "", err
+	}
+	var outcome string
+	if err := json.Unmarshal(value, &outcome); err != nil {
+		return "", fmt.Errorf("decode browser action outcome: %w", err)
+	}
+	return outcome, nil
+}
+
+func (b *Browser) evaluate(ctx context.Context, expression string) (json.RawMessage, error) {
 	result, err := b.call(ctx, "Runtime.evaluate", map[string]any{"expression": expression, "returnByValue": true, "awaitPromise": true})
 	if err != nil {
-		if strings.Contains(err.Error(), "target is stale") || strings.Contains(err.Error(), "target is occluded") {
-			return "", fmt.Errorf("%w: %v", jev.ErrStaleObservation, err)
-		}
-		return "", err
+		return nil, err
 	}
-	var eval struct {
-		Result struct{ Value string `json:"value"` } `json:"result"`
+	return decodeEvaluateResult(result)
+}
+
+func decodeEvaluateResult(raw json.RawMessage) (json.RawMessage, error) {
+	var result struct {
+		Result struct {
+			Value json.RawMessage `json:"value"`
+		} `json:"result"`
+		ExceptionDetails *struct {
+			Text      string `json:"text"`
+			Exception *struct {
+				Description string `json:"description"`
+			} `json:"exception"`
+		} `json:"exceptionDetails"`
 	}
-	if err := json.Unmarshal(result, &eval); err != nil {
-		return "", err
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("decode Runtime.evaluate result: %w", err)
 	}
-	return eval.Result.Value, nil
+	if result.ExceptionDetails == nil {
+		return result.Result.Value, nil
+	}
+
+	message := result.ExceptionDetails.Text
+	if result.ExceptionDetails.Exception != nil && result.ExceptionDetails.Exception.Description != "" {
+		message = result.ExceptionDetails.Exception.Description
+	}
+	if strings.Contains(message, "target is stale") || strings.Contains(message, "target is occluded") {
+		return nil, fmt.Errorf("%w: %s", jev.ErrStaleObservation, message)
+	}
+	return nil, fmt.Errorf("Runtime.evaluate: %s", message)
 }
 
 func (b *Browser) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
@@ -470,7 +510,8 @@ const snapshotScript = `(() => {
     if (center !== el && !el.contains(center)) continue;
     const id = ++index;
     el.setAttribute('data-geniex-jev-index', String(id));
-    const name = (el.getAttribute('aria-label') || el.innerText || el.value || el.placeholder || el.title || '').trim().slice(0, 160);
+    const text = ['input', 'textarea', 'select'].includes(el.tagName.toLowerCase()) ? '' : el.innerText;
+    const name = (el.getAttribute('aria-label') || text || el.placeholder || el.title || '').trim().slice(0, 160);
     elements.push({index:id, tag:el.tagName.toLowerCase(), role:el.getAttribute('role') || '', name, type:el.type || '', href:el.href || '', target:el.target || '', download:el.hasAttribute('download'), form:!!el.form, disabled:!!el.disabled, content_editable:el.isContentEditable});
   }
   return {url:location.href, title:document.title, elements};
@@ -481,4 +522,3 @@ const snapshotScript = `(() => {
 func SortElements(elements []jev.Element) {
 	sort.Slice(elements, func(i, j int) bool { return elements[i].Index < elements[j].Index })
 }
-

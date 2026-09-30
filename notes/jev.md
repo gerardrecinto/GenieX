@@ -31,13 +31,11 @@ geniex jev <model> choose \
 
 ### Customer-support triage
 
-`triage` is a single bundled structured decision designed for a controlled latency comparison with Laya's five-question customer-support preset:
+`triage` is a bundled customer-support structured decision:
 
 ```bash
 geniex jev <model> triage \
-  --message "I was charged twice this month and want a refund" \
-  --threads <count> --threads-batch <count> \
-  --benchmark 20
+  --message "I was charged twice this month and want a refund"
 ```
 
 It emits exactly one record with categorical values:
@@ -46,22 +44,11 @@ It emits exactly one record with categorical values:
 {"intent":"refund","is_urgent":"no","frustration":"2","refund_requested":"yes","churn_risk":"no"}
 ```
 
-The `intent` labels match Laya's stable choice IDs. `is_urgent`, `refund_requested`, and `churn_risk` are GenieX `yes`/`no` categories, and `frustration` is a `0`–`3` category. They are intentionally not Laya's raw `noul` probabilities or continuous score values. The comparison measures one request's architectural latency, not answer quality, calibration, model size, or comparable token throughput: Laya uses one non-autoregressive encoder forward pass with zero generated tokens, while GenieX generates a grammar-constrained JSON record.
+`intent` is a stable categorical ID. `is_urgent`, `refund_requested`, and `churn_risk` are GenieX `yes`/`no` categories, and `frustration` is a `0`–`3` category.
 
-To compare JEV with ordinary GenieX inference, add `--benchmark <repetitions>` to `classify`, `choose`, or `triage`. GenieX performs one discarded warmup, resets the loaded model between attempts, then writes timing JSON to standard error while preserving the decision JSON on standard output. The timing report includes native SDK generation time/TTFT, token counts and throughput, the median end-to-end JEV decision time, JEV host overhead, standard deviation, a SHA-256 prompt identifier plus prompt-contract version, and the requested tuning values.
+Add `--benchmark <repetitions>` to `classify`, `choose`, or `triage` to measure JEV inference. GenieX performs one discarded warmup, resets the loaded model between attempts, then writes timing JSON to standard error while preserving the decision JSON on standard output. The timing report includes native SDK generation time/TTFT, token counts and throughput, the median end-to-end JEV decision time, JEV host overhead, standard deviation, a SHA-256 prompt identifier plus prompt-contract version, and the requested tuning values.
 
 `--threads`, `--threads-batch`, `--batch`, and `--ubatch` are opt-in JEV model controls. Each defaults to `0`, retaining the SDK default; provide only non-negative values. Sweep `--threads` and `--threads-batch` on the target hardware with the same model, prompt, compute unit, context size, image inputs, and token limit. Compare at least 20 post-warmup samples using median end-to-end time and decode tokens/s, verify the typed decisions against a representative corpus, and confirm the applied values with `GENIEX_LOG=info` `[Optimise]` logs. Treat the winning values as a workload-specific invocation profile, not a new global default. JEV prompts usually differ from an ad hoc `infer` prompt, so compare token counts and throughput as well as latency. Browser timing is intentionally excluded: screenshot/DOM observation, approval wait, and browser execution are separate host costs, not model inference.
-
-For the Laya side, run the GenieX-owned external runner without adding Laya or Torch as dependencies:
-
-```bash
-python benchmarks/bench_laya_triage.py \
-  --laya-root C:/Users/kvo/projects/code/laya \
-  --fixture benchmarks/jev_laya_triage_fixture.json \
-  --model english --device cpu --threads <same-thread-count> --repetitions 20
-```
-
-It preloads Laya before timing, discards one warmup, then emits hot `Router.predict` p50/p95/mean/stddev latency and five-decision throughput. Model load, download, process startup, and JSON serialization are excluded. Use the same CPU-only physical-core-oriented thread policy for both engines, record model/runtime revisions, and keep the two JSON reports together; do not subtract their latencies or compare their token rates.
 
 - **Classification** returns exactly one stable label ID from `ClassificationSpec.Labels`.
 - **Multiple choice** returns a bounded, duplicate-free list of stable option IDs from `MultipleChoiceSpec.Options`.
@@ -140,7 +127,7 @@ The model never gets arbitrary JavaScript, CSS selectors, shell access, or gener
 
 With the default `--auto read` policy, these actions can run automatically when their targets are unambiguously safe:
 
-- read/extract, scroll, wait, history navigation;
+- read/extract of non-sensitive controls, scroll, wait, history navigation;
 - same-origin navigation;
 - ordinary non-submitting text entry;
 - normal link navigation.

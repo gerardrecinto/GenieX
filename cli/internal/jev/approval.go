@@ -58,7 +58,12 @@ func ApprovalRequired(mode ApprovalMode, action Action, observation Observation)
 	}
 
 	switch action.Action {
-	case ActionRead, ActionScroll, ActionWait, ActionGoBack, ActionGoForward, ActionFinish:
+	case ActionScroll, ActionWait, ActionGoBack, ActionGoForward, ActionFinish:
+		return false, "read-only action"
+	case ActionRead:
+		if found && isSensitiveElement(element) {
+			return true, "reading a password or payment field requires confirmation"
+		}
 		return false, "read-only action"
 	case ActionNavigate:
 		if sameOrigin(observation.URL, action.URL) {
@@ -112,10 +117,11 @@ func elementRequiresApproval(element Element, currentURL string) (bool, string) 
 }
 
 func elementRequiresApprovalForType(element Element) bool {
-	if strings.EqualFold(element.Type, "password") || isPaymentField(element) {
-		return true
-	}
-	return element.Form || hasDangerousIntent(element)
+	return isSensitiveElement(element) || element.Form || hasDangerousIntent(element)
+}
+
+func isSensitiveElement(element Element) bool {
+	return strings.EqualFold(element.Type, "password") || isPaymentField(element)
 }
 
 func isSubmitControl(element Element) bool {
@@ -172,10 +178,15 @@ func sameOrigin(current, next string) bool {
 // RedactedText hides content intended for password/payment controls from traces
 // and approval prompts.
 func RedactedText(action Action, target *Element) string {
-	if target != nil && (strings.EqualFold(target.Type, "password") || isPaymentField(*target)) {
+	return RedactSensitiveText(action.Text, target)
+}
+
+// RedactSensitiveText hides text associated with password/payment controls.
+func RedactSensitiveText(text string, target *Element) string {
+	if target != nil && isSensitiveElement(*target) {
 		return "<redacted>"
 	}
-	return action.Text
+	return text
 }
 
 // ApprovalSummary builds a concise terminal description without exposing

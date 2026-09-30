@@ -75,6 +75,27 @@ func TestJEVInputValidation(t *testing.T) {
 	}
 }
 
+func TestJEVOnlyAcceptsConsumedModelFlags(t *testing.T) {
+	command := jevCmd()
+	for _, name := range []string{"compute", "ngl", "nctx", "max-tokens", "image-max-length", "threads", "threads-batch", "batch", "ubatch"} {
+		if command.Flags().Lookup(name) == nil {
+			t.Fatalf("JEV is missing consumed flag --%s", name)
+		}
+	}
+	for _, name := range []string{"temperature", "top-p", "top-k", "min-p", "repetition-penalty", "presence-penalty", "frequency-penalty", "seed", "grammar-path", "grammar-string", "enable-json", "stop", "stop-file", "think", "system-prompt", "input", "prompt", "token-file", "sliding-window", "spec-type", "draft-model", "draft-tokens", "draft-min", "draft-p-min"} {
+		if command.Flags().Lookup(name) != nil {
+			t.Fatalf("JEV accepts ignored flag --%s", name)
+		}
+	}
+
+	inferCommand := infer()
+	for _, name := range []string{"temperature", "grammar-string", "think", "spec-type", "draft-model"} {
+		if inferCommand.Flags().Lookup(name) == nil {
+			t.Fatalf("infer lost flag --%s", name)
+		}
+	}
+}
+
 func TestJEVRuntimeOptions(t *testing.T) {
 	if err := validateJEVRuntimeOptions(jevOptions{}); err != nil {
 		t.Fatalf("validateJEVRuntimeOptions() error = %v", err)
