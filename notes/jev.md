@@ -119,7 +119,7 @@ geniex jev <vlm> browser --task "..." \
   --profile C:\safe-browser-profile
 ```
 
-Only give the command a profile or existing browser session that is appropriate for the task. An attached browser can contain authenticated pages and private data.
+`--attach` accepts only absolute loopback DevTools endpoints (`http`, `https`, `ws`, or `wss`) on `127.0.0.0/8`, `::1`, or `localhost`; remote and wildcard endpoints are rejected. Only give the command a profile or existing browser session that is appropriate for the task. An attached browser can contain authenticated pages and private data.
 
 ### Safety boundary
 
@@ -144,7 +144,7 @@ Choose **Approve**, **Skip**, or **Abort** at each prompt. Approvals are not rem
 
 A classification, multiple-choice result, or advisory confidence value cannot make a login, submission, purchase, deletion, upload, download, new-window action, or cross-origin navigation safe. `cli/internal/jev` retains all browser action validation, freshness checks, redaction, and explicit approval.
 
-`--dry-run` never executes browser actions. `--trace-dir <directory>` preserves screenshots and trusted action summaries for debugging; do not use trace directories to store sensitive task data.
+`--dry-run` never executes browser actions. Without `--trace-dir`, screenshots are kept in a private temporary directory only for the active browser session and deleted when it closes. `--trace-dir <directory>` preserves screenshots and trusted action summaries for debugging; do not use trace directories to store sensitive task data. Reads are limited to elements in the current indexed map.
 
 ### Limits
 

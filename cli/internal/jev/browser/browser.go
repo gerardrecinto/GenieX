@@ -43,10 +43,12 @@ type Config struct {
 type Browser struct {
 	ws         *websocket.Conn
 	process    *exec.Cmd
-	profileDir string
-	removeDir  bool
-	traceDir   string
-	mu         sync.Mutex
+	profileDir           string
+	removeDir            bool
+	traceDir             string
+	observationDir       string
+	removeObservationDir bool
+	mu                   sync.Mutex
 	nextID     int
 }
 
@@ -77,6 +79,11 @@ const cdpClientOrigin = "http://127.0.0.1"
 // Open attaches to an existing browser or launches a clean isolated instance.
 func Open(ctx context.Context, config Config) (*Browser, error) {
 	endpoint := config.AttachURL
+	if endpoint != "" {
+		if err := validateAttachURL(endpoint); err != nil {
+			return nil, err
+		}
+	}
 	browser := &Browser{traceDir: config.TraceDir}
 	if endpoint == "" {
 		port, err := freePort()
@@ -100,6 +107,9 @@ func Open(ctx context.Context, config Config) (*Browser, error) {
 				return nil, err
 			}
 		}
+		// path is supplied by the local operator or selected from fixed Chrome/Edge
+		// candidates; untrusted model or page data never controls the executable.
+		// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 		browser.process = exec.CommandContext(ctx, path, launchArgs(port, profileDir, config.Headless, config.InitialURL)...)
 		if err := browser.process.Start(); err != nil {
 			browser.Close()
@@ -112,6 +122,10 @@ func Open(ctx context.Context, config Config) (*Browser, error) {
 	if err != nil {
 		browser.Close()
 		return nil, err
+	}
+	if err := validateAttachURL(pageURL); err != nil {
+		browser.Close()
+		return nil, fmt.Errorf("invalid CDP page endpoint: %w", err)
 	}
 	ws, err := websocket.Dial(pageURL, "", cdpClientOrigin)
 	if err != nil {
@@ -158,6 +172,11 @@ func (b *Browser) Close() error {
 			firstErr = err
 		}
 	}
+	if b.removeObservationDir && b.observationDir != "" {
+		if err := os.RemoveAll(b.observationDir); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
 	return firstErr
 }
 
@@ -182,14 +201,9 @@ func (b *Browser) Observe(ctx context.Context) (jev.Observation, error) {
 	if err != nil {
 		return jev.Observation{}, fmt.Errorf("decode browser screenshot image: %w", err)
 	}
-	dir := b.traceDir
-	if dir == "" {
-		dir, err = os.MkdirTemp("", "geniex-jev-observation-")
-		if err != nil {
-			return jev.Observation{}, err
-		}
-		// Individual observation files are cleaned at process exit by the OS temp
-		// policy; a caller that wants persistent artifacts supplies --trace-dir.
+	dir, err := b.observationOutputDir()
+	if err != nil {
+		return jev.Observation{}, err
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return jev.Observation{}, err
@@ -206,6 +220,24 @@ func (b *Browser) Observe(ctx context.Context) (jev.Observation, error) {
 		return jev.Observation{}, err
 	}
 	return jev.Observation{URL: url, Title: title, ScreenshotPath: file.Name(), Elements: elements, Fingerprint: fingerprint}, nil
+}
+
+// observationOutputDir returns a persistent caller-owned trace directory or a
+// private temporary directory that Browser.Close removes.
+func (b *Browser) observationOutputDir() (string, error) {
+	if b.traceDir != "" {
+		return b.traceDir, nil
+	}
+	if b.observationDir != "" {
+		return b.observationDir, nil
+	}
+	dir, err := os.MkdirTemp("", "geniex-jev-observation-")
+	if err != nil {
+		return "", fmt.Errorf("create observation directory: %w", err)
+	}
+	b.observationDir = dir
+	b.removeObservationDir = true
+	return dir, nil
 }
 
 func (b *Browser) snapshot(ctx context.Context) (string, string, []jev.Element, error) {
@@ -243,6 +275,9 @@ func (b *Browser) ensureFresh(ctx context.Context, observation jev.Observation) 
 }
 
 func (b *Browser) Execute(ctx context.Context, action jev.Action, observation jev.Observation) (string, error) {
+	if action.Action == jev.ActionRead && action.Index == nil {
+		return "", fmt.Errorf("read action requires an element index")
+	}
 	if err := b.ensureFresh(ctx, observation); err != nil {
 		return "", err
 	}
@@ -265,7 +300,7 @@ func (b *Browser) Execute(ctx context.Context, action jev.Action, observation je
 		expression = fmt.Sprintf("new Promise(resolve => setTimeout(() => resolve('waited'), %d))", action.Milliseconds)
 	case jev.ActionRead:
 		if action.Index == nil {
-			return "read page", nil
+			return "", fmt.Errorf("read action requires an element index")
 		}
 		expression = targetExpression(*action.Index, "el => el.innerText || (el.type === 'password' ? '<redacted>' : el.value) || el.getAttribute('aria-label') || 'read'")
 	case jev.ActionClick:
@@ -370,18 +405,46 @@ func (b *Browser) call(ctx context.Context, method string, params any) (json.Raw
 	}
 }
 
+func validateAttachURL(raw string) error {
+	endpoint, err := url.ParseRequestURI(raw)
+	if err != nil || !endpoint.IsAbs() || endpoint.Host == "" || endpoint.User != nil {
+		return fmt.Errorf("attach endpoint must be an absolute loopback URL")
+	}
+	switch endpoint.Scheme {
+	case "http", "https", "ws", "wss":
+	default:
+		return fmt.Errorf("attach endpoint scheme must be http, https, ws, or wss")
+	}
+	host := endpoint.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return nil
+	}
+	address := net.ParseIP(host)
+	if address == nil || !address.IsLoopback() {
+		return fmt.Errorf("attach endpoint host must be loopback")
+	}
+	return nil
+}
+
 func waitForPage(ctx context.Context, endpoint string, attached bool, initialURL string) (string, error) {
 	endpoint = strings.TrimSuffix(endpoint, "/")
+	// validateAttachURL permits this transport only for loopback CDP endpoints.
+	// nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
 	if strings.HasPrefix(endpoint, "ws://") || strings.HasPrefix(endpoint, "wss://") {
 		return endpoint, nil
 	}
 	if _, err := url.ParseRequestURI(endpoint); err != nil {
 		return "", fmt.Errorf("invalid CDP endpoint %q: %w", endpoint, err)
 	}
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	for {
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/json/list", nil)
 		if err == nil {
-			response, requestErr := http.DefaultClient.Do(request)
+			response, requestErr := client.Do(request)
 			if requestErr == nil {
 				body, readErr := io.ReadAll(response.Body)
 				response.Body.Close()

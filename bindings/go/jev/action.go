@@ -157,10 +157,8 @@ func (a Action) Validate(observation Observation) error {
 			return fmt.Errorf("wait duration must be between 1 and 30000 milliseconds")
 		}
 	case ActionRead:
-		if a.Index != nil {
-			if _, err := needsElement(); err != nil {
-				return err
-			}
+		if _, err := needsElement(); err != nil {
+			return err
 		}
 	case ActionGoBack, ActionGoForward:
 	case ActionFinish:

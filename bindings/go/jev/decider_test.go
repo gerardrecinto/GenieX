@@ -35,9 +35,10 @@ func TestParseAction(t *testing.T) {
 		ok   bool
 	}{
 		{"valid click", `{"action":"click","index":1}`, ActionClick, true},
-		{"fenced action", "```json\n{\"action\":\"read\"}\n```", ActionRead, true},
+		{"fenced action", "```json\n{\"action\":\"read\",\"index\":1}\n```", ActionRead, true},
+		{"read without index", `{"action":"read"}`, "", false},
 		{"unknown field", `{"action":"click","index":1,"selector":"#x"}`, "", false},
-		{"two values", `{"action":"read"}{"action":"read"}`, "", false},
+		{"two values", `{"action":"read","index":1}{"action":"read","index":1}`, "", false},
 		{"invalid URL", `{"action":"navigate","url":"javascript:alert(1)"}`, "", false},
 		{"invalid target", `{"action":"click","index":100}`, "", false},
 		{"invalid scroll", `{"action":"scroll","direction":"left","amount":1}`, "", false},
@@ -86,6 +87,8 @@ func TestActionValidate(t *testing.T) {
 		ok     bool
 	}{
 		{"valid type", Action{Action: ActionType, Index: ptr(2), Text: "note"}, true},
+		{"read target", Action{Action: ActionRead, Index: ptr(1)}, true},
+		{"read without target", Action{Action: ActionRead}, false},
 		{"type link", Action{Action: ActionType, Index: ptr(1), Text: "note"}, false},
 		{"bounded wait", Action{Action: ActionWait, Milliseconds: 30000}, true},
 		{"long wait", Action{Action: ActionWait, Milliseconds: 30001}, false},
@@ -119,13 +122,13 @@ func (f *fakeVLM) Generate(input geniex_sdk.VlmGenerateInput) (*geniex_sdk.VlmGe
 }
 
 func TestDeciderBuildsConstrainedVisualRequest(t *testing.T) {
-	model := &fakeVLM{response: &geniex_sdk.VlmGenerateOutput{FullText: `{"action":"read"}`}}
+	model := &fakeVLM{response: &geniex_sdk.VlmGenerateOutput{FullText: `{"action":"read","index":1}`}}
 	response, err := (VLMDecider{VLM: model, RuntimeID: geniex_sdk.RuntimeLlamaCpp, ImageMaxLength: 512}).DecideAction(
 		context.Background(), "read the page", observation(), []string{"scrolled"}, "bad JSON")
 	if err != nil {
 		t.Fatalf("DecideAction() error = %v", err)
 	}
-	if response != `{"action":"read"}` {
+	if response != `{"action":"read","index":1}` {
 		t.Fatalf("response = %q", response)
 	}
 	if len(model.templateInput.Messages) != 2 || len(model.templateInput.Messages[1].Contents) != 2 {
@@ -147,11 +150,11 @@ func TestDeciderBuildsConstrainedVisualRequest(t *testing.T) {
 
 func TestDeciderReturnsPartialOutput(t *testing.T) {
 	model := &fakeVLM{
-		response:    &geniex_sdk.VlmGenerateOutput{FullText: `{"action":"read"}`},
+		response:    &geniex_sdk.VlmGenerateOutput{FullText: `{"action":"read","index":1}`},
 		generateErr: errors.New("cut off"),
 	}
 	response, err := (VLMDecider{VLM: model}).DecideAction(context.Background(), "read", observation(), nil, "")
-	if err != nil || response != `{"action":"read"}` {
+	if err != nil || response != `{"action":"read","index":1}` {
 		t.Fatalf("DecideAction() = (%q, %v)", response, err)
 	}
 }

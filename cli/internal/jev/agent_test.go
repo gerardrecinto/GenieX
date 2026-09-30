@@ -32,6 +32,7 @@ func TestParseActionRejectsUnsafeOrInvalidActions(t *testing.T) {
 	}{
 		{"unknown field", `{"action":"click","index":1,"selector":"#x"}`},
 		{"invalid target", `{"action":"click","index":99}`},
+		{"read without index", `{"action":"read"}`},
 		{"javascript URL", `{"action":"navigate","url":"javascript:alert(1)"}`},
 		{"type button", `{"action":"type","index":2,"text":"x"}`},
 		{"bad scroll", `{"action":"scroll","direction":"left","amount":1}`},
@@ -59,7 +60,6 @@ func TestApprovalPolicyFailsClosed(t *testing.T) {
 		action   Action
 		required bool
 	}{
-		{"read page", Action{Action: ActionRead}, false},
 		{"read password", Action{Action: ActionRead, Index: pointer(3)}, true},
 		{"read plain text", Action{Action: ActionRead, Index: pointer(4)}, false},
 		{"read payment text", Action{Action: ActionRead, Index: pointer(5)}, true},
@@ -120,6 +120,23 @@ func (d *sequenceDecider) DecideAction(context.Context, string, Observation, []s
 type fakeApprover struct{ decision ApprovalDecision }
 
 func (a fakeApprover) Approve(ApprovalRequest) (ApprovalDecision, error) { return a.decision, nil }
+
+func TestAgentRejectsReadWithoutIndexBeforeDispatch(t *testing.T) {
+	browser := &fakeBrowser{observation: testObservation()}
+	agent := Agent{
+		Browser: browser,
+		Decider: &sequenceDecider{responses: []string{
+			`{"action":"read"}`,
+		}},
+		Config: AgentConfig{Task: "read docs", MaxSteps: 1, MaxRetries: 0, ApprovalMode: ApprovalRead},
+	}
+	if _, err := agent.Run(context.Background()); err == nil {
+		t.Fatal("Run() accepted an unindexed read")
+	}
+	if len(browser.executed) != 0 {
+		t.Fatalf("unindexed read was dispatched: %#v", browser.executed)
+	}
+}
 
 func TestAgentRetriesThenRequiresApproval(t *testing.T) {
 	browser := &fakeBrowser{observation: testObservation()}

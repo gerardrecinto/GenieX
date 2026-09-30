@@ -5,6 +5,8 @@ package browser
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -19,6 +21,87 @@ func TestLaunchArgsRestrictsCDPOrigin(t *testing.T) {
 	}
 	if strings.Contains(joined, "--remote-allow-origins=*") {
 		t.Fatalf("launch args allow every origin: %#v", args)
+	}
+}
+
+func TestValidateAttachURL(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		raw  string
+		ok   bool
+	}{
+		{"IPv4 HTTP", "http://127.0.0.1:9222", true},
+		{"IPv4 WebSocket", "ws://127.0.0.1:9222/devtools/page/1", true},
+		{"IPv6 HTTPS", "https://[::1]:9222", true},
+		{"IPv6 secure WebSocket", "wss://[::1]:9222/devtools/page/1", true},
+		{"localhost", "http://localhost:9222", true},
+		{"loopback range", "http://127.1.2.3:9222", true},
+		{"remote host", "http://example.com:9222", false},
+		{"remote IP", "ws://192.0.2.1:9222", false},
+		{"unspecified IPv4", "http://0.0.0.0:9222", false},
+		{"unspecified IPv6", "http://[::]:9222", false},
+		{"unsupported scheme", "file:///tmp/debug", false},
+		{"relative URL", "/json/list", false},
+		{"credentials", "http://user:password@127.0.0.1:9222", false},
+		{"malformed", "http://[::1", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateAttachURL(test.raw)
+			if (err == nil) != test.ok {
+				t.Fatalf("validateAttachURL(%q) error = %v, want success=%v", test.raw, err, test.ok)
+			}
+		})
+	}
+}
+
+func TestObservationOutputDirLifecycle(t *testing.T) {
+	t.Run("temporary directory is removed", func(t *testing.T) {
+		browser := &Browser{}
+		dir, err := browser.observationOutputDir()
+		if err != nil {
+			t.Fatalf("observationOutputDir() error = %v", err)
+		}
+		if browser.removeObservationDir != true {
+			t.Fatal("temporary observation directory is not owned")
+		}
+		if again, err := browser.observationOutputDir(); err != nil || again != dir {
+			t.Fatalf("observationOutputDir() = (%q, %v), want (%q, nil)", again, err, dir)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "screenshot.png"), []byte("image"), 0o600); err != nil {
+			t.Fatalf("write temporary screenshot: %v", err)
+		}
+		if err := browser.Close(); err != nil {
+			t.Fatalf("Close() error = %v", err)
+		}
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Fatalf("temporary observation directory still exists: %v", err)
+		}
+	})
+
+	t.Run("explicit trace directory is retained", func(t *testing.T) {
+		dir := t.TempDir()
+		browser := &Browser{traceDir: dir}
+		got, err := browser.observationOutputDir()
+		if err != nil || got != dir {
+			t.Fatalf("observationOutputDir() = (%q, %v), want (%q, nil)", got, err, dir)
+		}
+		file := filepath.Join(dir, "screenshot.png")
+		if err := os.WriteFile(file, []byte("image"), 0o600); err != nil {
+			t.Fatalf("write trace screenshot: %v", err)
+		}
+		if err := browser.Close(); err != nil {
+			t.Fatalf("Close() error = %v", err)
+		}
+		if _, err := os.Stat(file); err != nil {
+			t.Fatalf("explicit trace screenshot was removed: %v", err)
+		}
+	})
+}
+
+func TestExecuteReadWithoutIndexFails(t *testing.T) {
+	browser := &Browser{}
+	if _, err := browser.Execute(t.Context(), jev.Action{Action: jev.ActionRead}, jev.Observation{}); err == nil {
+		t.Fatal("Execute() accepted an unindexed read")
 	}
 }
 
