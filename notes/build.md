@@ -12,12 +12,15 @@ Install Bazelisk:
 
 ## Windows prerequisites
 
-### Symlink support (Bazel)
+### Symlink support (Bazel and CMake)
+
+Needed for both Bazel and the SDK's CMake configure step — a vendored submodule (sentencepiece, under `third-party/geniex-qairt`) creates a symlink during configure and fails with "A required privilege is not held by the client" without this.
 
 1. Enable **Developer Mode**: Settings → Privacy & Security → For developers.
 2. Grant **Create symbolic links** rights via `gpedit.msc` → Computer Configuration → Windows Settings → Security Settings → Local Policies → User Rights Assignment, or set `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\LocalAccountTokenFilterPolicy = 1` (DWORD).
 3. Enable **Long paths**: Settings → Privacy & Security → For developers.
-4. If symlink errors persist, comment out `startup --windows_enable_symlinks` in `.bazelrc` — but be aware this can break other SDK paths.
+4. **Sign out and back in (or reboot)** after enabling Developer Mode. The toggle showing "On" in Settings isn't enough — already-open sessions keep their old token, which lacks `SeCreateSymbolicLinkPrivilege` until a fresh logon. Verify with `whoami /priv | findstr SymbolicLink` in a new terminal; if it prints nothing, the privilege hasn't taken effect yet.
+5. If symlink errors persist, comment out `startup --windows_enable_symlinks` in `.bazelrc` — but be aware this can break other SDK paths.
 
 ### Toolchain (SDK build)
 
@@ -30,6 +33,15 @@ The SDK's Rust model manager (`sdk/model-manager`) is built by `cargo` from CMak
   ```powershell
   rustup target add aarch64-pc-windows-msvc
   ```
+
+> [!IMPORTANT]
+> `clang` compiles against the MSVC ABI (`--target=arm64-pc-windows-msvc`), so it needs MSVC's `INCLUDE`/`LIB` (e.g. `oldnames.lib`, `msvcrtd.lib`) and `lld-link`/`link.exe` on `PATH`. A plain terminal doesn't have these set, and CMake's compiler-ABI check fails with `lld-link: error: could not open 'oldnames.lib'`. Configure and build from inside a Visual Studio **Developer** environment for the ARM64 target, e.g.:
+>
+> ```powershell
+> cmd /c '"C:\Program Files\Microsoft Visual Studio\<edition>\Common7\Tools\VsDevCmd.bat" -arch=arm64 -host_arch=x64 && cmake --preset arm64-windows-snapdragon-release -B build'
+> ```
+>
+> (adjust the install path/edition for your Visual Studio install; requires the "Desktop development with C++" workload with ARM64 build tools.)
 
 ### Native SDKs (for full Snapdragon build)
 
@@ -51,6 +63,8 @@ The `arm64-windows-snapdragon-release` preset requires:
 > subst G: C:\path\to\geniex
 > cd G:\sdk
 > ```
+
+Run from inside a Visual Studio Developer environment for ARM64 (see [Toolchain § clang/MSVC note](#toolchain-sdk-build) above) — either launch a "Developer PowerShell for VS" (ARM64 variant) from the Start menu, or call `VsDevCmd.bat` first:
 
 ```powershell
 cd sdk
