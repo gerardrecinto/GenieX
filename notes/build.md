@@ -32,13 +32,28 @@ Needed for both Bazel and the SDK's CMake configure step — a vendored submodul
 
 The SDK's Rust model manager (`sdk/model-manager`) is built by `cargo` from CMake, and its build scripts compile C code, so a native Windows ARM64 build also needs:
 
-- **clang** — C compiler used by Rust build scripts (via `cc-rs`) and the Snapdragon presets
-- **cargo** — install Rust with [rustup](https://rustup.rs)
-- **Rust target** for Windows ARM64:
+- **clang** (verified with `22.1.2`) — C compiler used by Rust build scripts (via `cc-rs`) and the Snapdragon presets. Install the ARM64 MSYS2 build — a plain LLVM installer doesn't provide an `aarch64`-hosted `clang.exe`:
+
+  ```powershell
+  winget install --id MSYS2.MSYS2
+  C:\msys64\usr\bin\pacman.exe -S --noconfirm mingw-w64-clang-aarch64-clang mingw-w64-clang-aarch64-lld
+  ```
+
+  Then add `C:\msys64\clangarm64\bin` to `PATH` (ahead of any other `clang.exe`, e.g. one bundled with Visual Studio).
+
+- **cargo** (verified with `cargo 1.95.0` / `rustc 1.95.0`) — install Rust with [rustup](https://rustup.rs):
+
+  ```powershell
+  winget install --id Rustlang.Rustup
+  ```
+
+- **Rust target** for Windows ARM64 — required in addition to whatever host target `rustup` installs by default:
 
   ```powershell
   rustup target add aarch64-pc-windows-msvc
   ```
+
+- **Visual Studio** (verified with VS 2026 (18.5) Community) — needed only for the MSVC libs/linker below, not as the C/C++ compiler itself. Install the **"Desktop development with C++"** workload with the **ARM64 build tools** optional component checked.
 
 > [!IMPORTANT]
 > `clang` compiles against the MSVC ABI (`--target=arm64-pc-windows-msvc`), so it needs MSVC's `INCLUDE`/`LIB` (e.g. `oldnames.lib`, `msvcrtd.lib`) and `lld-link`/`link.exe` on `PATH`. A plain terminal doesn't have these set, and CMake's compiler-ABI check fails with `lld-link: error: could not open 'oldnames.lib'`. Configure and build from inside a Visual Studio **Developer** environment for the ARM64 target, e.g.:
@@ -47,7 +62,7 @@ The SDK's Rust model manager (`sdk/model-manager`) is built by `cargo` from CMak
 > cmd /c '"C:\Program Files\Microsoft Visual Studio\<edition>\Common7\Tools\VsDevCmd.bat" -arch=arm64 -host_arch=x64 && cmake --preset arm64-windows-snapdragon-release -B build'
 > ```
 >
-> (adjust the install path/edition for your Visual Studio install; requires the "Desktop development with C++" workload with ARM64 build tools.)
+> (adjust the install path/edition for your Visual Studio install.)
 
 ### Native SDKs (for full Snapdragon build)
 
