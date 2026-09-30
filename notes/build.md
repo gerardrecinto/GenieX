@@ -19,6 +19,18 @@ Install Bazelisk:
 3. Enable **Long paths**: Settings → Privacy & Security → For developers.
 4. If symlink errors persist, comment out `startup --windows_enable_symlinks` in `.bazelrc` — but be aware this can break other SDK paths.
 
+### Toolchain (SDK build)
+
+The SDK's Rust model manager (`sdk/model-manager`) is built by `cargo` from CMake, and its build scripts compile C code, so a native Windows ARM64 build also needs:
+
+- **clang** — C compiler used by Rust build scripts (via `cc-rs`) and the Snapdragon presets
+- **cargo** — install Rust with [rustup](https://rustup.rs)
+- **Rust target** for Windows ARM64:
+
+  ```powershell
+  rustup target add aarch64-pc-windows-msvc
+  ```
+
 ### Native SDKs (for full Snapdragon build)
 
 The `arm64-windows-snapdragon-release` preset requires:
