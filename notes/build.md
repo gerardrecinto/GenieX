@@ -12,27 +12,25 @@ Install Bazelisk:
 
 ## Windows prerequisites
 
-> [!IMPORTANT]
-> Run every command below from **PowerShell** (`pwsh` or Windows PowerShell) — not `cmd.exe`, Git Bash, or WSL. The toolchain step below chains commands through `cmd /c '"...\VsDevCmd.bat" ... && cmake ...'`, and that only parses correctly with PowerShell's quoting (an outer single-quoted string wrapping embedded double-quoted paths). Backslash-escaped quotes (`\"..\"`) are a `cmd.exe` convention — PowerShell doesn't treat `\` as a string escape character, so `cmd /c "...\"C:\Program Files...\"..."` breaks with `'\' is not recognized as an internal or external command`.
+Run every command below from **PowerShell**, not `cmd.exe`, Git Bash, or WSL. The `cmd /c '"...\VsDevCmd.bat" ... && ...'` commands below rely on PowerShell quoting (outer single quotes, inner double quotes).
 
 ### Symlink support (Bazel and CMake)
 
-Needed for both Bazel and the SDK's CMake configure step — a vendored submodule (sentencepiece, under `third-party/geniex-qairt`) creates a symlink during configure and fails with "A required privilege is not held by the client" without this.
+Also needed by the SDK's CMake configure: a vendored submodule (sentencepiece, under `third-party/geniex-qairt`) creates a symlink and fails with "A required privilege is not held by the client" without it.
 
 1. Enable **Developer Mode**: Settings → Privacy & Security → For developers.
 2. Grant **Create symbolic links** rights via `gpedit.msc` → Computer Configuration → Windows Settings → Security Settings → Local Policies → User Rights Assignment, or set `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\LocalAccountTokenFilterPolicy = 1` (DWORD).
 3. Enable **Long paths**: Settings → Privacy & Security → For developers.
-4. **Sign out and back in (or reboot)** after enabling Developer Mode. The toggle showing "On" in Settings isn't enough — already-open sessions keep their old token, which lacks `SeCreateSymbolicLinkPrivilege` until a fresh logon. Verify with `whoami /priv | findstr SymbolicLink` in a new terminal; if it prints nothing, the privilege hasn't taken effect yet.
+4. **Sign out and back in (or reboot)** after enabling Developer Mode; open sessions keep the old token. Verify in a new terminal with `whoami /priv | findstr SymbolicLink` (no output means it hasn't taken effect).
 5. If symlink errors persist, comment out `startup --windows_enable_symlinks` in `.bazelrc` — but be aware this can break other SDK paths.
 
-> [!NOTE]
-> **Corporate/domain-joined machines:** on a managed PC, Group Policy can prevent step 4 from ever taking effect — `whoami /priv` keeps showing no `SeCreateSymbolicLinkPrivilege` even after a full reboot with Developer Mode confirmed on (check with `gpresult /r` to confirm GPOs are applied). If that's the case, skip the Developer Mode dance and instead run the build (both `cmake --preset ...` and `bazelisk ...`) from an **elevated** terminal ("Run as Administrator" PowerShell, or an elevated "Developer PowerShell for VS"). Local Administrators get `SeCreateSymbolicLinkPrivilege` by default once elevated, regardless of Developer Mode or domain policy. You can confirm you're a local admin even when GPO is blocking the normal grant via `whoami /groups` — `BUILTIN\Administrators` shows up as "Group used for deny only" in a standard (non-elevated) session, meaning UAC is filtering the privilege rather than it being genuinely absent.
+**Corporate/domain-joined machines:** Group Policy can block step 4 even after a reboot. In that case, run the build (`cmake --preset ...` and `bazelisk ...`) from an **elevated** terminal ("Run as Administrator"); local Administrators get `SeCreateSymbolicLinkPrivilege` once elevated. `whoami /groups` showing `BUILTIN\Administrators` as "Group used for deny only" confirms you're an admin filtered by UAC.
 
 ### Toolchain (SDK build)
 
 The SDK's Rust model manager (`sdk/model-manager`) is built by `cargo` from CMake, and its build scripts compile C code, so a native Windows ARM64 build also needs:
 
-- **clang** (verified with `22.1.2`) — C compiler used by Rust build scripts (via `cc-rs`) and the Snapdragon presets. Install the ARM64 MSYS2 build — a plain LLVM installer doesn't provide an `aarch64`-hosted `clang.exe`:
+- **clang** (verified with `22.1.2`) — used by `cc-rs` and the Snapdragon presets. Install the ARM64 MSYS2 build (the plain LLVM installer has no `aarch64`-hosted `clang.exe`):
 
   ```powershell
   winget install --id MSYS2.MSYS2
@@ -41,28 +39,16 @@ The SDK's Rust model manager (`sdk/model-manager`) is built by `cargo` from CMak
 
   Then add `C:\msys64\clangarm64\bin` to `PATH` (ahead of any other `clang.exe`, e.g. one bundled with Visual Studio).
 
-- **cargo** (verified with `cargo 1.95.0` / `rustc 1.95.0`) — install Rust with [rustup](https://rustup.rs):
+- **cargo** (verified with `1.95.0`) and the Windows ARM64 target:
 
   ```powershell
   winget install --id Rustlang.Rustup
-  ```
-
-- **Rust target** for Windows ARM64 — required in addition to whatever host target `rustup` installs by default:
-
-  ```powershell
   rustup target add aarch64-pc-windows-msvc
   ```
 
-- **Visual Studio** (verified with VS 2026 (18.5) Community) — needed only for the MSVC libs/linker below, not as the C/C++ compiler itself. Install the **"Desktop development with C++"** workload with the **ARM64 build tools** optional component checked.
+- **Visual Studio** (verified with VS 2026 18.5 Community) — for the MSVC libs/linker only. Install the **"Desktop development with C++"** workload with the **ARM64 build tools** component.
 
-> [!IMPORTANT]
-> `clang` compiles against the MSVC ABI (`--target=arm64-pc-windows-msvc`), so it needs MSVC's `INCLUDE`/`LIB` (e.g. `oldnames.lib`, `msvcrtd.lib`) and `lld-link`/`link.exe` on `PATH`. A plain terminal doesn't have these set, and CMake's compiler-ABI check fails with `lld-link: error: could not open 'oldnames.lib'`. Configure and build from inside a Visual Studio **Developer** environment for the ARM64 target, e.g.:
->
-> ```powershell
-> cmd /c '"C:\Program Files\Microsoft Visual Studio\<edition>\Common7\Tools\VsDevCmd.bat" -arch=arm64 -host_arch=x64 && cmake --preset arm64-windows-snapdragon-release -B build'
-> ```
->
-> (adjust the install path/edition for your Visual Studio install.)
+`clang` targets the MSVC ABI, so it needs MSVC's `INCLUDE`/`LIB` and `lld-link` on `PATH`. Without them, CMake's compiler check fails with `lld-link: error: could not open 'oldnames.lib'`. Configure and build from a Visual Studio **Developer** environment for ARM64 (see [Build the SDK](#windows-arm64-snapdragon)).
 
 ### Native SDKs (for full Snapdragon build)
 
@@ -85,7 +71,7 @@ The `arm64-windows-snapdragon-release` preset requires:
 > cd G:\sdk
 > ```
 
-Run from inside a Visual Studio Developer environment for ARM64 (see [Toolchain § clang/MSVC note](#toolchain-sdk-build) above) — either launch a "Developer PowerShell for VS" (ARM64 variant) from the Start menu, or call `VsDevCmd.bat` first. On a corporate/domain-joined machine where the symlink privilege won't take effect (see [Symlink support](#symlink-support-bazel-and-cmake) above), launch that PowerShell **elevated** ("Run as Administrator"):
+Run from a "Developer PowerShell for VS" (ARM64), elevated if the symlink privilege won't take effect (see [Symlink support](#symlink-support-bazel-and-cmake)):
 
 ```powershell
 cd sdk
@@ -94,7 +80,7 @@ cmake --build build -j
 cmake --install build --prefix pkg-geniex
 ```
 
-Or in one line from a plain (non-Developer) PowerShell, chaining through `VsDevCmd.bat` — note the outer single-quotes (see the PowerShell quoting warning under [Windows prerequisites](#windows-prerequisites)):
+Or from a plain PowerShell, chaining through `VsDevCmd.bat` (adjust the path/edition for your install):
 
 ```powershell
 cmd /c '"C:\Program Files\Microsoft Visual Studio\<edition>\Common7\Tools\VsDevCmd.bat" -arch=arm64 -host_arch=x64 && cmake --preset arm64-windows-snapdragon-release -B build && cmake --build build -j && cmake --install build --prefix pkg-geniex'
@@ -213,22 +199,13 @@ The Android demo app is no longer hosted in this repo — it lives in [`qualcomm
 
 ### Building against a different QAIRT SDK's headers
 
-The `qairt` plugin (`sdk/plugins/qairt`) compiles against the QNN C API headers
-vendored in `third-party/geniex-qairt/qnn-api/include/` — deliberately the
-lowest version it supports, so the compiled plugin accepts the widest range of
-runtimes. To compile against a different header set instead (e.g. a
-workbench/internal QAIRT checkout), pass `-DQAIRT_QNN_HEADERS=...` through to
-any of the presets above — it's a CMake cache variable defined in the
-submodule, so it flows straight through `add_subdirectory`:
+The `qairt` plugin compiles against the lowest-supported QNN headers vendored in `third-party/geniex-qairt/qnn-api/include/`. To use another set (e.g. an internal QAIRT checkout), pass `-DQAIRT_QNN_HEADERS=...` to any preset above:
 
-```bash
+```powershell
 cmake --preset arm64-windows-snapdragon-release -B build -DQAIRT_QNN_HEADERS=C:\path\to\qairt\include
 ```
 
-See [`third-party/geniex-qairt` § Using a different QAIRT runtime](https://github.com/qualcomm/geniex-qairt-plugin#using-a-different-qairt-runtime)
-for the expected directory shape and caveats (this only narrows the accepted
-runtime range, never widens it). Requires the submodule to be at or past
-`geniex-qairt-plugin` commit `9f852a2` (allow external QNN SDK headers).
+See the [plugin README](https://github.com/qualcomm/geniex-qairt-plugin#using-a-different-qairt-runtime) for the expected directory shape and caveats.
 
 ## Build and run the CLI
 
