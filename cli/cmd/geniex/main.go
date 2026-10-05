@@ -52,6 +52,7 @@ func RootCmd() *cobra.Command {
 			if !slices.Contains([]string{
 				"",
 				"run", // pure HTTP client, no local store
+				"doctor", // SDK metadata only; does not need the model manager
 				"version", "update",
 				"help", "completion", cobra.ShellCompRequestCmd,
 			}, subCmd) {
@@ -75,7 +76,7 @@ func RootCmd() *cobra.Command {
 				if !slices.Contains([]string{
 					"",
 					"remove", "clean", "list", "model",
-					"config",
+					"config", "doctor",
 					"version", "update",
 					"help", "completion", cobra.ShellCompRequestCmd,
 				}, subCmd) {
@@ -120,7 +121,7 @@ func RootCmd() *cobra.Command {
 		infer(),
 		serve(), run(),
 		configCmd(),
-		version(), update(),
+		version(), doctor(), update(),
 	)
 
 	return rootCmd

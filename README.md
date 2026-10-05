@@ -71,6 +71,10 @@ geniex infer ai-hub-models/Qwen2.5-VL-7B-Instruct
 
 # GGUF from Docker Hub (https://hub.docker.com/u/ai) → llama.cpp (NPU / GPU / CPU)
 geniex infer docker.io/ai/gemma3
+
+# Inspect local runtimes and accelerator readiness without downloading a model
+geniex doctor
+geniex doctor --json
 ```
 
 📖 **Docs** — [Install](https://geniex.aihub.qualcomm.com/en/run/cli/install) · [Quickstart](https://geniex.aihub.qualcomm.com/en/run/cli/quickstart) · [Command reference](https://geniex.aihub.qualcomm.com/en/run/cli/reference)

@@ -5,6 +5,7 @@ go_library(
     name = "geniex_lib",
     srcs = [
         "config.go",
+        "doctor.go",
         "help.go",
         "infer.go",
         "main.go",
@@ -44,6 +45,7 @@ go_library(
 go_cgo_test(
     name = "geniex_test",
     srcs = [
+        "doctor_test.go",
         "infer_test.go",
         "model_test.go",
     ],
