@@ -103,7 +103,8 @@ typedef struct {
      * relying on an external hard kill. All default 0 = disabled. */
     int32_t max_gen_time_s;         /* --max-gen-time-s: wall-clock cap per generate() call */
     int32_t no_progress_timeout_s;  /* --no-progress-timeout-s: abort if no new token for N seconds */
-    int32_t repetition_max_repeats; /* --repetition-max-repeats: abort after N consecutive repeats of the same token string */
+    int32_t repetition_max_repeats; /* --repetition-max-repeats: abort after N consecutive repeats of the same token
+                                       string */
 
     /* Prefill-only raw-logits mode (--logits): one forward pass over the prompt,
      * no decode loop. Bypasses the timing/warmup/repeat machinery entirely. */

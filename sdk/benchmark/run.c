@@ -63,12 +63,12 @@ static int64_t now_us(void) {
  * leaks into the next. `o` is only read, never owned. */
 typedef struct {
     const options_t* o;
-    int64_t           gen_start_us;
-    int64_t           last_token_us;
-    char              last_token_buf[256];
-    int32_t           repeat_count;
-    int32_t           n_tokens;
-    const char*       abort_reason; /* "wall-time" | "no-progress" | "repetition" | "signal"; NULL if not tripped */
+    int64_t          gen_start_us;
+    int64_t          last_token_us;
+    char             last_token_buf[256];
+    int32_t          repeat_count;
+    int32_t          n_tokens;
+    const char*      abort_reason; /* "wall-time" | "no-progress" | "repetition" | "signal"; NULL if not tripped */
 } token_guard_t;
 
 static void token_guard_init(token_guard_t* g, const options_t* o) {
@@ -85,8 +85,8 @@ static void token_guard_init(token_guard_t* g, const options_t* o) {
  * whatever text was accumulated so far, so a tripped guard is a clean exit,
  * not a crash. */
 static bool on_token(const char* token, void* user_data) {
-    token_guard_t*    g = (token_guard_t*)user_data;
-    const options_t*  o = g->o;
+    token_guard_t*   g = (token_guard_t*)user_data;
+    const options_t* o = g->o;
     busy_wait_us(o->token_callback_delay_us);
 
     if (g_abort_requested) {
@@ -387,8 +387,8 @@ void run_llm(const options_t* o, const device_t* dev, run_result_t* out) {
                 gin.input_ids       = tokens;
                 gin.input_ids_count = o->n_prompt;
             }
-            gin.config    = &gconfig;
-            gin.on_token  = on_token;
+            gin.config   = &gconfig;
+            gin.on_token = on_token;
             token_guard_t guard;
             token_guard_init(&guard, o);
             gin.user_data = (void*)&guard;
@@ -614,7 +614,7 @@ void run_vlm(const options_t* o, const device_t* dev, run_result_t* out) {
             gin.on_token    = on_token;
             token_guard_t guard;
             token_guard_init(&guard, o);
-            gin.user_data   = (void*)&guard;
+            gin.user_data = (void*)&guard;
 
             int32_t rc = geniex_vlm_generate(vlm, &gin, &gout);
             if (generate_rc_is_fatal(rc)) {
