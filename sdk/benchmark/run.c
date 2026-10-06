@@ -43,13 +43,99 @@ static void busy_wait_us(int32_t us) {
 #endif
 }
 
-/* A no-op unless --token-callback-delay-us inflates each call, which
- * simulates the per-token cost a Python binding pays for its ctypes wrapper
- * plus GIL acquire/release. */
+/* Monotonic wall-clock, microseconds since an arbitrary epoch. Only ever
+ * differenced against another now_us() call. */
+static int64_t now_us(void) {
+#ifdef _WIN32
+    LARGE_INTEGER freq, t;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&t);
+    return (int64_t)(t.QuadPart * 1000000LL / freq.QuadPart);
+#else
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (int64_t)t.tv_sec * 1000000LL + (int64_t)t.tv_nsec / 1000;
+#endif
+}
+
+/* Per-generate()-call state for on_token's self-abort guard. Allocated fresh
+ * for every call in run_llm/run_vlm so one prompt's repeat/timing state never
+ * leaks into the next. `o` is only read, never owned. */
+typedef struct {
+    const options_t* o;
+    int64_t           gen_start_us;
+    int64_t           last_token_us;
+    char              last_token_buf[256];
+    int32_t           repeat_count;
+    int32_t           n_tokens;
+    const char*       abort_reason; /* "wall-time" | "no-progress" | "repetition" | "signal"; NULL if not tripped */
+} token_guard_t;
+
+static void token_guard_init(token_guard_t* g, const options_t* o) {
+    memset(g, 0, sizeof(*g));
+    g->o             = o;
+    g->gen_start_us  = now_us();
+    g->last_token_us = g->gen_start_us;
+}
+
+/* --max-gen-time-s / --no-progress-timeout-s / --repetition-max-repeats /
+ * SIGTERM-SIGABRT guard, checked in that order on every token. Each one
+ * defaults to 0 = disabled. Returning false here is the SDK's documented
+ * clean-abort path: generate() returns success with stop_reason="user" and
+ * whatever text was accumulated so far, so a tripped guard is a clean exit,
+ * not a crash. */
 static bool on_token(const char* token, void* user_data) {
-    (void)token;
-    busy_wait_us(((const options_t*)user_data)->token_callback_delay_us);
+    token_guard_t*    g = (token_guard_t*)user_data;
+    const options_t*  o = g->o;
+    busy_wait_us(o->token_callback_delay_us);
+
+    if (g_abort_requested) {
+        g->abort_reason = "signal";
+        return false;
+    }
+
+    int64_t t_now = now_us();
+    if (o->max_gen_time_s > 0 && (t_now - g->gen_start_us) >= (int64_t)o->max_gen_time_s * 1000000LL) {
+        g->abort_reason = "wall-time";
+        return false;
+    }
+    if (o->no_progress_timeout_s > 0 && (t_now - g->last_token_us) >= (int64_t)o->no_progress_timeout_s * 1000000LL) {
+        g->abort_reason = "no-progress";
+        return false;
+    }
+    if (o->repetition_max_repeats > 0) {
+        if (g->last_token_buf[0] != '\0' && strcmp(token, g->last_token_buf) == 0) {
+            g->repeat_count++;
+        } else {
+            g->repeat_count = 1;
+            strncpy(g->last_token_buf, token, sizeof(g->last_token_buf) - 1);
+            g->last_token_buf[sizeof(g->last_token_buf) - 1] = '\0';
+        }
+        if (g->repeat_count >= o->repetition_max_repeats) {
+            g->abort_reason = "repetition";
+            return false;
+        }
+    }
+
+    g->last_token_us = t_now;
+    g->n_tokens++;
     return true;
+}
+
+/* Print the two --accuracy stdout markers for one generate() call: the SDK's
+ * own stop_reason (always, fixing the "grading summary misreports the cause"
+ * gap even for the plain max-tokens/length case) and, only when the guard
+ * tripped, the self-abort line the orchestrator greps for. */
+static void print_stop_markers(const token_guard_t* g, const geniex_ProfileData* p) {
+    fprintf(stdout, "[info] stop_reason=%s\n", p->stop_reason ? p->stop_reason : "?");
+    if (g->abort_reason) {
+        fprintf(stdout,
+            "[warn] self-abort: reason=%s after=%dtok elapsed=%lldms\n",
+            g->abort_reason,
+            g->n_tokens,
+            (long long)((now_us() - g->gen_start_us) / 1000));
+    }
+    fflush(stdout);
 }
 
 /* --------------------------- SDK config fill --------------------------- */
@@ -303,7 +389,9 @@ void run_llm(const options_t* o, const device_t* dev, run_result_t* out) {
             }
             gin.config    = &gconfig;
             gin.on_token  = on_token;
-            gin.user_data = (void*)o;
+            token_guard_t guard;
+            token_guard_init(&guard, o);
+            gin.user_data = (void*)&guard;
 
             int32_t rc = geniex_llm_generate(llm, &gin, &gout);
             if (generate_rc_is_fatal(rc)) {
@@ -327,6 +415,9 @@ void run_llm(const options_t* o, const device_t* dev, run_result_t* out) {
                 out_idx++;
             }
 
+            if (!is_warmup && o->accuracy) {
+                print_stop_markers(&guard, &gout.profile_data);
+            }
             if (!is_warmup && o->accuracy && gout.full_text) {
                 print_gen_text(gout.full_text);
             }
@@ -521,7 +612,9 @@ void run_vlm(const options_t* o, const device_t* dev, run_result_t* out) {
             gin.prompt_utf8 = final_prompt;
             gin.config      = &gconfig;
             gin.on_token    = on_token;
-            gin.user_data   = (void*)o;
+            token_guard_t guard;
+            token_guard_init(&guard, o);
+            gin.user_data   = (void*)&guard;
 
             int32_t rc = geniex_vlm_generate(vlm, &gin, &gout);
             if (generate_rc_is_fatal(rc)) {
@@ -544,6 +637,9 @@ void run_vlm(const options_t* o, const device_t* dev, run_result_t* out) {
                 out_idx++;
             }
 
+            if (!is_warmup && o->accuracy) {
+                print_stop_markers(&guard, &gout.profile_data);
+            }
             if (!is_warmup && o->accuracy && gout.full_text) {
                 print_gen_text(gout.full_text);
             }
